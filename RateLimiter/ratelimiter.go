@@ -22,11 +22,14 @@ func NewRateLimiter(c *redis.Client, key_prefix string) *RateLimiter {
 }
 
 // SetRate 设置指定 key 的限流阈值
-func (rl *RateLimiter) SetRate(ctx context.Context, key string, maxTokens, tokenRate float64) error {
+func (rl *RateLimiter) SetRate(ctx context.Context, key string, qps float64) error {
 	// 使用 redis pipline 来原子性地更新限流配置
 	// rate 表示每毫秒生成的令牌数量, 原来的 rate 是每毫秒生成整数个 token, 现在支持小数级别的 rate
 	rateKey := rl.keyPrefix + ":" + key + ":rate"
 	maxTokensKey := rl.keyPrefix + ":" + key + ":max_tokens"
+
+	tokenRate := qps / 1000
+	maxTokens := qps
 
 	pipe := rl.client.Pipeline()
 	pipe.Set(ctx, rateKey, tokenRate, 0)
