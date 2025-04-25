@@ -1,50 +1,63 @@
 package main
 
-// 测试限流器
+import (
+	"bufio"
+	"context"
+	"fmt"
+
+	//"monilive/internal/biz"
+	"monilive/internal/biz/multi_tasks_system"
+	"os"
+	"strings"
+
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
+)
+
 func main() {
-	// // 创建 Redis 客户端
-	// client := redis.NewClient(&redis.Options{
-	// 	Addr:     "localhost:6379",
-	// 	Password: "", // 如果有密码，在这里设置
-	// 	DB:       0,
-	// })
+	// 数据库连接（需要替换为真实的数据库链接）
+	dsn := "root:password@tcp(127.0.0.1:3306)/test_db?charset=utf8mb4&parseTime=True&loc=Local"
+	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
+	if err != nil {
+		panic(" 连接数据库失败")
+	}
 
-	// // 创建限流器实例
-	// limiter := ratelimiter.NewRateLimiter(
-	// 	client,
-	// 	10,     // 最大令牌数
-	// 	10,     // 每秒产生的令牌数
-	// 	"test", // Redis key前缀
-	// )
+	ctx, cancel := context.WithCancel(context.Background())
 
-	// // 测试限流器
-	// // ctx := context.Background()
-	// // for i := 0; i < 15; i++ {
-	// // 	time.Sleep(1000 * time.Millisecond)
-	// // 	if limiter.Allow(ctx, "user1") {
-	// // 		fmt.Printf("请求 %d 通过\n", i+1)
-	// // 	} else {
-	// // 		fmt.Printf("请求 %d 被限流\n", i+1)
-	// // 	}
-	// // 	time.Sleep(1000 * time.Millisecond)
-	// // }
-	// // 测试限流器
-	// ctx := context.Background()
-	// for i := 0; i < 15; i++ {
-	// 	tokens, lastRefresh, err := limiter.GetTokens(ctx, "user1")
-	// 	if err != nil {
-	// 		fmt.Printf("获取令牌信息失败: %v\n", err)
-	// 	} else {
-	// 		fmt.Printf("当前令牌数: %d, 上次更新时间: %s\n",
-	// 			tokens,
-	// 			time.Unix(lastRefresh, 0).Format("15:04:05"))
-	// 	}
+	// 初始化 TaskProcessor（如果不使用 RateLimiter，可以不传）
+	taskProcessor := &multi_tasks_system.TaskProcessor{}
 
-	// 	if limiter.Allow(ctx, "user1") {
-	// 		fmt.Printf("请求 %d 通过\n", i+1)
-	// 	} else {
-	// 		fmt.Printf("请求 %d 被限流\n", i+1)
-	// 	}
-	// 	time.Sleep(500 * time.Millisecond)
-	// }
+	// 启动刷新任务
+	taskProcessor.StartWorkerInfoRefresher(ctx, db)
+
+	fmt.Println(" 刷新任务已启动，输入 show 查看数据，stop 停止任务")
+
+	scanner := bufio.NewScanner(os.Stdin)
+	for scanner.Scan() {
+		text := strings.TrimSpace(scanner.Text())
+
+		switch text {
+		case "stop":
+			cancel()
+			fmt.Println(" 刷新任务已停止，程序退出")
+			return
+
+		case "show":
+			fmt.Println(" 当前缓存的 Worker 数据：")
+			multi_tasks_system.WorkerInfoMap.Range(func(key, value any) bool {
+				if info, ok := value.(*multi_tasks_system.WorkerInfo); ok {
+					fmt.Printf("WorkerID: %d, TemplateID: %d, CategoryName: %s, VoiceGender: %s\n",
+						info.Worker.ID,
+						info.PromptTemplate.ID,
+						info.Category.CategoryName,
+						info.Voice.Gender,
+					)
+				}
+				return true
+			})
+
+		default:
+			fmt.Println(" 未知命令，请输入 show 或 stop")
+		}
+	}
 }
