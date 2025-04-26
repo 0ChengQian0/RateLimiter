@@ -25,6 +25,13 @@ import (
 // TaskProcessor handles the periodic checking of Redis and manages goroutines
 // 定义结构体
 type TaskProcessor struct {
+	redisClient   *redis.Client // redis 客户端
+	taskSetKey    string        // redis 中存储任务ID的集合键
+	interval      time.Duration // 检查任务的时间间隔
+	activeTasks   sync.Map      // 改用 sync.Map 替代 map
+	rateLimiter   *RateLimiter  // 全局限速器
+	wg            sync.WaitGroup
+	WorkerInfoMap sync.Map //存储worker信息
 	redisClient               *redis.Client // redis 客户端
 	taskSetKey                string        // redis 中存储任务ID的集合键
 	interval                  time.Duration // 检查任务的时间间隔
@@ -64,9 +71,6 @@ func NewTaskProcessor(client *redis.Client, taskSetKey string, interval time.Dur
 	}
 }
 
-// 存放worker数据的字典
-var WorkerInfoMap sync.Map
-
 // 存储worker具体信息的结构体
 type WorkerInfo struct {
 	Worker         biz.AiWorkerDeployEntity
@@ -74,6 +78,9 @@ type WorkerInfo struct {
 	PromptTemplate biz.PromptTemplateEntity
 	Category       biz.PromptTemplateCategoryEntity
 	Voice          biz.GuideShoppingVoiceEntity
+	FirsWordVoice  biz.FirstWordVoiceDeployEntity
+	VariableList   biz.VariableDeployEntity
+	PromptCategory biz.FirstWordVoiceDeployEntity
 }
 
 // 设置计时器，定期刷新worker信息
@@ -123,8 +130,20 @@ func (tp *TaskProcessor) refreshWorkerData(db *gorm.DB) {
 		if err := db.Table("guide_shopping_voice").Where("id = ?", worker.VoiceId).Scan(&info.Voice).Error; err != nil {
 			fmt.Printf(" 获取语音失败（WorkerID=%d）: %v\n", worker.ID, err)
 		}
+		//开场白语音
+		if err := db.Model(&biz.FirstWordVoiceDeployEntity{}).First(&info.FirsWordVoice, "id = ?", info.SpeechCraft.Extend.FirstWordVoiceId).Error; err != nil {
+			fmt.Printf(" 获取开场白语音失败（WorkerID=%d）: %v\n", worker.ID, err)
+		}
+		//隐藏prompt
+		if err := db.Model(&biz.PromptTemplateCategoryEntity{}).Where("id = ?", info.PromptTemplate.PromptTemplateCategoryId).First(&info.PromptCategory).Error; err != nil {
+			fmt.Printf(" 获取隐藏prompt失败（WorkerID=%d）: %v\n", worker.ID, err)
+		}
+		//获取变量列表
+		if err := db.Model(&biz.VariableDeployEntity{}).Where("id = ?", info.SpeechCraft.Variables).Find(&info.VariableList).Error; err != nil {
+			fmt.Printf(" 获取变量列表失败（WorkerID=%d）: %v\n", worker.ID, err)
+		}
 
-		WorkerInfoMap.Store(worker.ID, &info)
+		tp.WorkerInfoMap.Store(worker.ID, &info)
 	}
 	fmt.Println(" Worker 数据已刷新")
 }
