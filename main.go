@@ -16,7 +16,7 @@ import (
 
 func main() {
 	// 数据库连接（需要替换为真实的数据库链接）
-	dsn := "root:password@tcp(127.0.0.1:3306)/test_db?charset=utf8mb4&parseTime=True&loc=Local"
+	dsn := "username:password@tcp(127.0.0.1:3306)/database_name?charset=utf8mb4&parseTime=True&loc=Local"
 	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
 	if err != nil {
 		panic(" 连接数据库失败")
@@ -44,7 +44,7 @@ func main() {
 
 		case "show":
 			fmt.Println(" 当前缓存的 Worker 数据：")
-			multi_tasks_system.WorkerInfoMap.Range(func(key, value any) bool {
+			taskProcessor.WorkerInfoMap.Range(func(key, value any) bool {
 				if info, ok := value.(*multi_tasks_system.WorkerInfo); ok {
 					fmt.Printf("WorkerID: %d, TemplateID: %d, CategoryName: %s, VoiceGender: %s\n",
 						info.Worker.ID,
